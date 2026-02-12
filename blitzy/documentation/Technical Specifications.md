@@ -16,15 +16,19 @@ The original `server.js` file is a minimal 14-line HTTP server that only handles
 **Reproduction Steps (Executable)**:
 ```bash
 # Start the server
+
 node server.js
 
 #### Test 1: Port conflict (EADDRINUSE - causes crash)
+
 node server.js & sleep 1 && node server.js  # Second instance crashes
 
 #### Test 2: No graceful shutdown
+
 node server.js & kill -TERM $!  # Abrupt termination
 
 #### Test 3: No validation
+
 curl -X INVALID http://127.0.0.1:3000/  # Accepted without validation
 ```
 
@@ -39,24 +43,28 @@ curl -X INVALID http://127.0.0.1:3000/  # Accepted without validation
 Based on research, THE root causes are:
 
 #### Root Cause 1: Missing Server Error Event Handler
+
 - **Located in**: `server.js` - Server instance (lines 6-10 in original)
 - **Triggered by**: Server startup failures such as port conflicts (EADDRINUSE) or permission issues (EACCES)
 - **Evidence**: `grep -n "error\|catch\|try" server.js` returned no matches; the server has zero error handling
 - **Conclusion**: The Node.js `http.Server` emits 'error' events that must be handled to prevent process crashes
 
 #### Root Cause 2: Missing Graceful Shutdown Handlers
+
 - **Located in**: `server.js` - Process level (no signal handlers exist)
 - **Triggered by**: SIGTERM/SIGINT signals sent during deployment, container orchestration, or user interruption
 - **Evidence**: `grep -n "SIGTERM\|SIGINT\|shutdown\|close" server.js` returned no matches
 - **Conclusion**: Without signal handlers, the process terminates immediately without closing active connections properly
 
 #### Root Cause 3: Missing Input Validation
+
 - **Located in**: `server.js` - Request handler (line 6-9 in original)
 - **Triggered by**: Malformed HTTP requests with invalid methods, missing URLs, or excessively long URIs
 - **Evidence**: `grep -n "req.method\|req.url\|validation" server.js` returned no matches
 - **Conclusion**: No defensive checks exist for incoming request data
 
 #### Root Cause 4: Missing Resource Timeout Configuration
+
 - **Located in**: `server.js` - Server instance configuration (not present in original)
 - **Triggered by**: Slow clients, network issues, or malicious slowloris attacks
 - **Evidence**: `grep -n "timeout\|cleanup\|destroy" server.js` returned no matches
@@ -324,14 +332,17 @@ Test Results: 16 passed, 0 failed
 **Confirm error handling works**:
 ```bash
 # Start first server
+
 node server.js &
 sleep 2
 
 #### Attempt second server (should show error message, not crash)
+
 timeout 5 node server.js
 #### Expected output: "Error: Port 3000 is already in use..."
 
 #### Cleanup
+
 pkill -f "node server.js"
 ```
 
@@ -342,8 +353,10 @@ SERVER_PID=$!
 sleep 2
 kill -TERM $SERVER_PID
 # Expected output: 
-# "SIGTERM received. Starting graceful shutdown..."
-# "Server closed. All connections handled."
+
+#### "SIGTERM received. Starting graceful shutdown..."
+#### "Server closed. All connections handled."
+
 ```
 
 **Validate functionality preserved**:
@@ -352,6 +365,7 @@ node server.js &
 sleep 2
 curl http://127.0.0.1:3000/
 # Expected output: "Hello, World!"
+
 pkill -f "node server.js"
 ```
 
@@ -371,6 +385,7 @@ npm test  # No test script defined in original package.json
 **Confirm performance metrics**:
 ```bash
 # Verify timeout configurations are set correctly
+
 node -e "
 const {server} = require('./server.js');
 console.log('requestTimeout:', server.requestTimeout);
