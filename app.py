@@ -3,10 +3,17 @@
 import logging
 
 from flask import Flask, Response
+from werkzeug.routing import PathConverter
 
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
+
+class _FullPathConverter(PathConverter):
+    regex = r'[^/][\s\S]*?'
+
+
 app = Flask(__name__, static_folder=None)
+app.url_map.converters['path'] = _FullPathConverter
 
 
 @app.route(
