@@ -4,7 +4,7 @@
 
 This document is mandated by the user-specified **"Explainability" rule**: every non-trivial implementation decision is recorded here with its alternatives, rationale, and risk, and a **bidirectional traceability matrix** maps every source construct to its target implementation (and back) at **100% coverage with no gaps**. Per that rule, design rationale lives **only** in this document and is intentionally **not** duplicated in code comments in `app.py` or `requirements.txt`.
 
-The migration replaces the Node.js runtime and its built-in `http` module with CPython 3 + Flask, while preserving every externally observable behavior of the original server: status `200`, bare `Content-Type: text/plain` (no charset), body `Hello, World!\n` (14 bytes, `Content-Length: 14`), binding `127.0.0.1:3000`, the startup log line, and universal handling of every HTTP method and path.
+The migration replaces the Node.js runtime and its built-in `http` module with CPython 3 + Flask, preserving the core HTTP contract of the original server: status `200`, bare `Content-Type: text/plain` (no charset), body `Hello, World!\n` (14 bytes, `Content-Length: 14`), binding `127.0.0.1:3000`, and the startup log line. Every path and all seven standard HTTP methods (`GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) reach the single catch-all handler and receive this fixed response. A small set of residual deviations that cannot be made byte-identical purely at the Flask application layer — the Werkzeug `Server` header, the additional Werkzeug startup banner, `HEAD` response-body stripping, and truly custom/exotic HTTP verbs returning `405` — are enumerated with rationale and risk in §3 (Residual Deviations) below.
 
 ## 1. Decision Log
 
@@ -70,3 +70,14 @@ Every target construct traces to an originating source construct, proving no orp
 | 8 | `docs/decision-log.md` | **No source construct** — mandated by the "Explainability" rule |
 
 **Coverage note:** The only target construct without a source counterpart is `docs/decision-log.md`, which exists solely to satisfy the "Explainability" rule and is annotated as such. There are no unexplained additions and no orphan source constructs — coverage is 100% in both directions.
+
+## 3. Residual Deviations
+
+The following table enumerates every behavior that cannot be made byte-identical purely at the Flask application layer, together with the chosen resolution and its risk. These are the residual deviations referenced in the summary above, and together they give **100% coverage of the known departures from strict Node parity**. Each is a documented, low-risk divergence. The `Server`-header, startup-banner, and exotic-verb items are also recorded as decisions #9, #10, and #11 in §1 (viewed there through the decision-making lens); they are consolidated here, alongside the `HEAD` deviation, so that all residual deviations are documented together in one authoritative place.
+
+| # | Concern | Node behavior | Flask/Werkzeug behavior | Chosen resolution | Risk |
+|---|---------|---------------|-------------------------|-------------------|------|
+| 1 | `Server` response header | Not sent | `Server: Werkzeug/<ver> Python/<ver>` is added by the development server at the request-handler layer (`send_response`), not via the response object | Accept as a documented low-risk deviation; optionally override `WSGIRequestHandler` if strict header parity is ever mandated | Response headers not byte-identical to Node |
+| 2 | Startup banner | Single custom line only | The Werkzeug development server prints an extra banner plus a development-server warning on stdout | Emit the Node-identical line via `print('Server running at http://127.0.0.1:3000/')`; accept the extra banner as stdout-only | Extra stdout lines (non-behavioral; does not affect HTTP responses) |
+| 3 | `HEAD` request body | Body `Hello, World!\n` is written | Flask/Werkzeug runs the view for `HEAD` but strips the response body while preserving `Content-Length: 14` | Accept as a documented low-risk deviation because HTTP clients ignore `HEAD` response bodies; strict byte parity would require a custom handler | Minor; the `HEAD` response body differs from Node, but clients ignore it |
+| 4 | Exotic / custom HTTP verbs | Handler runs for any verb | Routing returns `405 Method Not Allowed` for verbs not listed on the route | Enumerate the seven standard verbs (`GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) so all realistic verbs reach the handler; optionally add a `405` handler returning the fixed body for fuller parity | Truly custom verbs return `405`, unlike Node |
