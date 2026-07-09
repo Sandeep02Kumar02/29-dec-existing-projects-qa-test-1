@@ -1,8 +1,12 @@
 """Flask reimplementation of the Node.js server (server.js)."""
 
+import logging
+
 from flask import Flask, Response
 
-app = Flask(__name__)
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+app = Flask(__name__, static_folder=None)
 
 
 @app.route(
